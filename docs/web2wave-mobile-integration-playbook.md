@@ -151,7 +151,7 @@ Before moving on, ask the human to run one real or test purchase on web and conf
 3. The user is entitled in the provider dashboard and in the app.
 4. Cancelling the subscription in web2wave removes access.
 
-See acceptance tests in §9.
+See acceptance tests in §11.
 
 ---
 
@@ -225,7 +225,43 @@ Reference for the web equivalent: https://docs.web2wave.com/reference/managing-s
 
 ---
 
-## 9. Acceptance tests
+## 9. Optional: onboarding quizzes inside the app
+
+Ask: *Do you want to use web2wave quizzes for onboarding inside the app?*
+
+If yes, show the quiz in a **WebView** instead of building native onboarding screens. The quiz is edited in web2wave, so onboarding can change without an app release.
+
+1. Embed the quiz URL in the SDK's WebView component (the SDKs ship one — see §7).
+2. Pass the provider profile id in the URL when the app already has one (`…?revenuecat_profile_id=…`, `adapty_profile_id`, `qonversion_profile_id`, `superwall_profile_id`, `apphud_profile_id`), so a purchase made in the flow syncs to the right provider user.
+3. Handle the WebView events (quiz finished, close, errors) with the SDK listener and continue the native flow.
+4. Reuse the same web2wave `user_id` for these users (§2.3) so answers, attribution and subscriptions stay in one profile.
+
+Docs and per-platform samples: https://docs.web2wave.com/reference/embedding-quizzes-and-paywalls-into-mobile-apps
+
+---
+
+## 10. Optional: payment inside the app with web2wave
+
+Ask: *Do you want to accept payments inside the app through web2wave?*
+
+If yes, create a **paywall** in web2wave and open it in the WebView (§9). Payment goes through the payment systems connected to web2wave and syncs directly to the subscription provider (§3), so access appears in the app the same way as for web purchases.
+
+**Tell the human plainly before implementing:**
+
+- This is **officially allowed only in the US**. In other countries, app store rules can make it a problem for the app (review rejection or other consequences). Check the current store policies for the markets they target.
+- Outside the US we recommend using it **only for promotions** — for example paywalls linked from email campaigns or push notifications — and **only for users who originally came from the web funnel**, not as the default purchase path for everyone.
+- If they are unsure, keep the in-app purchase flow as is and skip this step.
+
+Implementation notes:
+
+1. Create the paywall in web2wave and take its URL.
+2. Open it in the SDK WebView with the web2wave `user_id` and the provider profile id in the URL (§9, step 2).
+3. Gate the entry point (country check and "came from web" flag) so the paywall is shown only to the intended users.
+4. After purchase, re-check access as in §3 / §6.
+
+---
+
+## 11. Acceptance tests
 
 1. Fresh install via the deeplink: the app logs the web2wave `user_id`, and it is stored on the device.
 2. Without an attribution tool: `identify()` returns the same `user_id`.
@@ -237,10 +273,12 @@ Reference for the web equivalent: https://docs.web2wave.com/reference/managing-s
 8. If backend webhooks are enabled: renewal and cancellation reach the backend once each.
 9. Manage Subscription (if enabled): opens the right link, hidden when no link.
 10. The API key is not logged and no destructive endpoint is called from the app.
+11. Onboarding quiz (if enabled): opens in the WebView, completion returns control to the native flow, answers appear in the user's properties.
+12. In-app paywall (if enabled): shown only to the intended users, a test purchase grants access in the provider, and the US-only note was explained to the human.
 
 ---
 
-## 10. Agent output expectations
+## 12. Agent output expectations
 
 When applying this playbook, the agent should:
 
@@ -249,4 +287,5 @@ When applying this playbook, the agent should:
 3. Implement only the chosen branch, using SDK calls and the linked docs for code samples.
 4. List, for the human, the exact web2wave project settings to fill (deeplink helper, provider keys, entitlement / product, and the webhook URL under Cabinet → API & Webhooks if a backend is needed).
 5. Add Manage Subscription only if requested (§8).
-6. Describe or run the acceptance tests (§9), and say which ones could not be run.
+6. At the end, ask about in-app onboarding quizzes (§9) and in-app payment (§10), and implement only what the human chooses.
+7. Describe or run the acceptance tests (§11), and say which ones could not be run.
