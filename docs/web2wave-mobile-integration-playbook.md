@@ -67,9 +67,11 @@ Documentation (read before coding):
 - AppsFlyer and Adjust parsing samples, and the exact link formats: https://docs.web2wave.com/reference/revenuecat-web2wave-integration (the samples apply to every provider; replace the provider call)
 - The link is built in the web2wave project: **Project settings → Deeplinks → Helper**.
 
+Also ask: *Do you want the web2wave deferred deeplinks SDK as a fallback* when the MMP does not deliver the `user_id` (see §2.4)?
+
 ### 2.2 No attribution tool
 
-Use web2wave deferred deeplinks: call `identify()` from the SDK on first launch.
+**Propose web2wave deferred deeplinks right away** — no extra SDK and no MMP dashboard. Call `identify()` from the web2wave SDK on first launch.
 
 - https://docs.web2wave.com/reference/web2wave-deferred-deeplinks
 
@@ -80,6 +82,28 @@ If the app embeds the quiz or paywall, the user id is known from the WebView ses
 - https://docs.web2wave.com/reference/embedding-quizzes-and-paywalls-into-mobile-apps
 
 **Store the web2wave `user_id` on the device** (secure storage / keychain / shared prefs). It is needed for access checks and Manage Subscription later.
+
+### 2.4 When the `user_id` does not arrive
+
+Deeplinks fail in practice (the user opened the store link in another browser, reinstalled, or the MMP did not match). Plan for it:
+
+1. **Ask** (if an MMP is present) or **recommend** (if there is none): *use the web2wave deferred deeplinks SDK as the fallback?* On first launch, if no `user_id` was stored and the MMP gave none, call `identify()`.
+2. Know its limits: it matches the device to a recent quiz / paywall session, **only within the last 48 hours**. The response `match_method` can be `no_match` (no candidate) or `ambiguous_fingerprint` (several users share the fingerprint) — in both cases there is **no `user_id`**. Handle that state; never crash or loop.
+3. When there is still no `user_id`, show a "Restore access" path instead of the paywall. If the human wants lookup by email, require **verification** (for example a login link sent to that email) before granting access — an email address alone is not proof of ownership.
+4. For a custom deeplink without an MMP, the usual instruction is "install the app via the link and then **open the link again**".
+
+Reference: https://docs.web2wave.com/reference/web2wave-deferred-deeplinks
+
+### 2.5 After the `user_id` is resolved: skip onboarding and paywall
+
+The user already went through the web funnel and paid. Once the `user_id` is resolved and access is confirmed:
+
+1. **Do not repeat onboarding.** Skip the in-app quiz or funnel. If the app wants to show or reuse the answers, read them from web2wave (`GET /user/properties`, §6.2) and pre-fill the profile.
+2. **Do not show the paywall** while the subscription is `active` or `trialing`.
+3. Show a short **"Subscription confirmed"** screen, then move the user to the main part of the app (home / dashboard) automatically.
+4. If access is **not** confirmed yet (the webhook / sync may take a moment), retry briefly before falling back to the normal paywall.
+
+Reference: https://docs.web2wave.com/reference/post-subscription-integration-flow
 
 ---
 
@@ -132,13 +156,22 @@ Notes for the agent:
 - web2wave **does not create users** in these providers. The provider SDK must already be started in the app so the user exists.
 - Superwall: send the id **after** `identify()` so it is the same id Superwall uses.
 - Each provider page lists project settings the human must fill (API key, entitlement / product / access level). Show them the page and the field names.
-- Android / iOS can have different entitlements or products per price — mention it.
+- Android and iOS may need different entitlements or products — see §3.4.
 
 ### 3.3 No subscription provider
 
 Check access straight from web2wave. Use the SDK `hasActiveSubscription(userId)` (or the API in §6) on launch and after returning from background. Treat `active` and `trialing` as entitled.
 
 - https://docs.web2wave.com/reference/direct-web2wave-integration
+
+### 3.4 Android and iOS products
+
+Ask: *Are the entitlements / products the same on Android and iOS?*
+
+- **Same:** fill the project-level value (entitlement / product / access level) once.
+- **Different:** fill the price-level fields. Price settings have separate **Android** and **iOS** fields (for example RevenueCat and Superwall entitlements, Apphud product ID); see the provider page for the exact field names. Priority is *platform field of the price → price field → project setting*.
+
+web2wave picks the field from the user's `user_platform` property (`android` / `ios`). If it is missing, the generic value is used — so check that it is set for the test user.
 
 ---
 
@@ -170,7 +203,9 @@ Explain what arrives: a `type: "subscription"` webhook whenever a subscription i
 
 ---
 
-## 6. Subscription API contract (used by §3.3 and §8)
+## 6. web2wave API contract (used by §2.5, §3.3, §8)
+
+### 6.1 Subscriptions
 
 Verified field names (same as the web playbook):
 
@@ -181,6 +216,49 @@ Verified field names (same as the web playbook):
 Useful fields: `status`, `paywall_name`, `plan_name`, `next_charge_date`, `canceled_at`, `manage_link`, `payment_system_label`.
 
 Entitlement: `status ∈ {active, trialing}` is access. Still list canceled / past_due / paused in any UI.
+
+### 6.2 User properties and quiz answers
+
+`GET /user/properties?user={guid}` →
+
+```json
+{
+  "user_id": "00000000-0000-4000-8000-000000000001",
+  "user_email": "user@example.com",
+  "properties": [
+    { "property": "email", "value": "user@example.com" },
+    { "property": "last_quiz_id", "value": "10001" },
+    { "property": "app_installed", "value": "1" }
+  ]
+}
+```
+
+- Email = `user_email` or property `email` (there is usually no top-level `email`).
+- Quiz answers and registration data come back as properties. Read only the ones the app needs, and use them to personalize the app and pre-fill the profile (§2.5).
+
+### 6.3 Writing properties and events from the app
+
+Send these after the `user_id` is resolved (the SDKs wrap them):
+
+- Property `app_installed = "1"` — once per user. Optionally also `external_user_id` = the app's own user id.
+- Event `"App installed"` — once per install:
+
+```http
+POST /user/events?user={guid}
+api_key: <key>
+
+{
+  "event_name": "App installed",
+  "event_value": "1",
+  "quiz": "10001",
+  "user_agent": "…",
+  "additional_data": [ { "key": "platform", "value": "ios" } ]
+}
+```
+
+- **`event_name`, `event_value` and `quiz` are all required.** Missing `event_value` → 422 "The event value field is required"; missing `quiz` → 422 "The quiz field is required".
+- `quiz` ← property `last_quiz_id` (fallback `"app"`).
+- `additional_data` is an array of `{key, value}` objects, not a free-form object.
 
 ---
 
@@ -213,15 +291,20 @@ If yes:
 
 1. Persist the web2wave `user_id` on first launch (§2).
 2. On tap, fetch the user's subscriptions (§6).
-3. Take `manage_link`:
-   - It can be **per subscription** (taken from each subscription row), or
-   - **static** for the whole project (the customer portal link configured in web2wave).
-   Prefer the per-subscription value; fall back to the project link.
+3. Take `manage_link` from the subscription row. It **already contains the `user_id`** — do not append it yourself.
 4. Open it in the system browser or an in-app browser. Do **not** try to render it inside the native UI.
 5. **Hide the button** when no subscription has a non-empty `manage_link` (some payment providers return `""`).
 6. Refresh state when the user returns to the app (the plan may have changed).
 
-Reference for the web equivalent: https://docs.web2wave.com/reference/managing-subscription
+Put the button where users expect billing: **Settings → Subscription**.
+
+**What the human must set up in web2wave** (tell them exactly where):
+
+1. The self-service page is a **quiz**. Find the **Manage subscriptions** quiz in *Quizzes & Pages*, or create it from the template of the same name, and publish it. It can be edited like any quiz — downsell and cancellation flows are configured there.
+2. Save its URL in **Project → General → Customer portal link**, including the `{user_id}` placeholder: `https://quiz.yourdomain.com/manage-subscriptions?user_id={user_id}`. If the field is empty, web2wave falls back to the **Stripe customer portal link** from payment settings.
+3. **Fallback without a `user_id`:** the user can sign in by email at `https://YOUR-DOMAIN/manage-account` and receives a magic link to the portal. Offer it as "I can't find my subscription" in the app.
+
+Reference: https://docs.web2wave.com/reference/managing-subscription
 
 ---
 
@@ -275,6 +358,10 @@ Implementation notes:
 10. The API key is not logged and no destructive endpoint is called from the app.
 11. Onboarding quiz (if enabled): opens in the WebView, completion returns control to the native flow, answers appear in the user's properties.
 12. In-app paywall (if enabled): shown only to the intended users, a test purchase grants access in the provider, and the US-only note was explained to the human.
+13. After a successful deeplink the app skips onboarding and the paywall, shows "Subscription confirmed", and opens the main screen.
+14. With no `user_id` (`no_match` / `ambiguous_fingerprint`) the app shows "Restore access" and does not crash or show a paywall to a paying user.
+15. `app_installed=1` is set once and the `"App installed"` event is accepted (HTTP 200, with `event_value` and `quiz`).
+16. If Android and iOS use different products, a test user on each platform receives the right one.
 
 ---
 
@@ -286,6 +373,7 @@ When applying this playbook, the agent should:
 2. Explain the relevant branch to the human — for RevenueCat, **both** connection ways and the working setups in §3.1.
 3. Implement only the chosen branch, using SDK calls and the linked docs for code samples.
 4. List, for the human, the exact web2wave project settings to fill (deeplink helper, provider keys, entitlement / product, and the webhook URL under Cabinet → API & Webhooks if a backend is needed).
-5. Add Manage Subscription only if requested (§8).
-6. At the end, ask about in-app onboarding quizzes (§9) and in-app payment (§10), and implement only what the human chooses.
-7. Describe or run the acceptance tests (§11), and say which ones could not be run.
+5. Handle the post-deeplink flow (§2.5) and the missing-`user_id` fallback (§2.4), and ask about Android / iOS products (§3.4).
+6. Add Manage Subscription only if requested (§8).
+7. At the end, ask about in-app onboarding quizzes (§9) and in-app payment (§10), and implement only what the human chooses.
+8. Describe or run the acceptance tests (§11), and say which ones could not be run.
