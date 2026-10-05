@@ -8,7 +8,7 @@ Code samples are **not duplicated here**. Every step links to the maintained doc
 
 ```text
 API base:  https://api.web2wave.com/api
-Auth:      header api_key: <WEB2WAVE_API_KEY>      (not Bearer)
+Auth:      header api-key: <WEB2WAVE_API_KEY>      (not Bearer; `api_key` is accepted as an alias)
 Docs:      https://docs.web2wave.com/llms.txt
 SDKs:      Swift · Kotlin · Java · Flutter · React Native · Unity  (github.com/web2wave/web2wave_*)
 ```
@@ -65,7 +65,7 @@ Documentation (read before coding):
 
 - End-to-end flow: https://docs.web2wave.com/reference/pass-subscription-from-web2web-to-app
 - AppsFlyer and Adjust parsing samples, and the exact link formats: https://docs.web2wave.com/reference/revenuecat-web2wave-integration (the samples apply to every provider; replace the provider call)
-- The link is built in the web2wave project: **Project settings → Deeplinks → Helper**.
+- The link is built in the web2wave project: **Project settings → Deeplinks & Billing → Helper**.
 
 Also ask: *Do you want the web2wave deferred deeplinks SDK as a fallback* when the MMP does not deliver the `user_id` (see §2.4)?
 
@@ -197,7 +197,7 @@ Recommend **no** unless they already have server-side logic that depends on it. 
 If **yes**, use webhooks:
 
 - Webhook formats: https://docs.web2wave.com/reference/webhook-formats
-- Setup: **Cabinet → API & Webhooks → Add webhook**, enable **Subscription updated** (see https://docs.web2wave.com/reference/get-your-api-key-and-set-up-webhooks). Use a public HTTPS URL.
+- Setup: **Project settings → API & Webhook → Add webhook**, enable **Subscription updated** (see https://docs.web2wave.com/reference/get-your-api-key-and-set-up-webhooks). Use a public HTTPS URL.
 
 Explain what arrives: a `type: "subscription"` webhook whenever a subscription is created, **renewed**, canceled, or its status changes. The payload includes `status` and `manage_link`. The backend must handle repeats idempotently and respond quickly. Keep the web2wave API key on the server only.
 
@@ -245,7 +245,7 @@ Send these after the `user_id` is resolved (the SDKs wrap them):
 
 ```http
 POST /user/events?user={guid}
-api_key: <key>
+api-key: <key>
 
 {
   "event_name": "App installed",
@@ -275,7 +275,7 @@ Use the matching SDK instead of raw HTTP in the app. Add the dependency and read
 | React Native | https://github.com/web2wave/web2wave_react_native |
 | Unity | https://github.com/web2wave/web2wave_unity |
 
-Overview: https://docs.web2wave.com/reference/sdk-integration · React Native: https://docs.web2wave.com/reference/react-native-integration
+Overview (all SDKs, including React Native): https://docs.web2wave.com/reference/sdk-integration
 
 Method names differ slightly per language (`setApphudProfileID` / `SetApphudProfileID` in Unity). Use the README, not memory.
 
@@ -372,7 +372,7 @@ When applying this playbook, the agent should:
 1. Report the discovery results (§1) and get confirmation.
 2. Explain the relevant branch to the human — for RevenueCat, **both** connection ways and the working setups in §3.1.
 3. Implement only the chosen branch, using SDK calls and the linked docs for code samples.
-4. List, for the human, the exact web2wave project settings to fill (deeplink helper, provider keys, entitlement / product, and the webhook URL under Cabinet → API & Webhooks if a backend is needed).
+4. List, for the human, the exact web2wave project settings to fill (deeplink helper, provider keys, entitlement / product, and the webhook URL under API & Webhook if a backend is needed).
 5. Handle the post-deeplink flow (§2.5) and the missing-`user_id` fallback (§2.4), and ask about Android / iOS products (§3.4).
 6. Add Manage Subscription only if requested (§8).
 7. At the end, ask about in-app onboarding quizzes (§9) and in-app payment (§10), and implement only what the human chooses.
